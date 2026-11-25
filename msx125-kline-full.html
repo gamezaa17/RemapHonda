@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MSX125 K-Line Diag</title>
+<style>
+  :root{--red:#d71920;--bg:#f5f5f7;--card:#fff;--txt:#1d1d1f;--mut:#6e6e73}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif;background:var(--bg);color:var(--txt)}
+  header{padding:14px 16px;background:#fff;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e5e5}
+  header b span{color:var(--red)}
+  #st,.pill{font-size:12px;padding:4px 10px;border-radius:99px;background:#eee}
+  #st.ok{background:#e3f6e8;color:#137333}
+  .pill{background:#fff3cd;color:#8a5a00}
+  .pill.full{background:#e3f6e8;color:#137333}
+  main{padding:14px;max-width:560px;margin:auto}
+  .card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .card h3{margin:0 0 10px;font-size:15px}
+  .mut{color:var(--mut);font-size:13px}
+  button{font:inherit;font-weight:600;border:2px solid var(--red);color:var(--red);background:#fff;border-radius:12px;padding:12px;width:100%;margin-top:8px}
+  button.pri{background:var(--red);color:#fff}
+  button:disabled{opacity:.4}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  .kv{background:var(--bg);border-radius:10px;padding:10px}
+  .kv small{display:block;color:var(--mut);font-size:11px}
+  .kv b{font-size:20px;font-variant-numeric:tabular-nums}
+  ul{margin:6px 0 0;padding-left:18px}
+  .kv em{display:block;font-style:normal;font-size:12px;font-weight:600;margin-top:2px}
+  .rpm{background:#111;color:#fff;border-radius:14px;padding:14px;margin-top:12px}
+  .rpm small{color:#aaa;font-size:12px}
+  .rpm b{font-size:44px;font-variant-numeric:tabular-nums}
+  .bar{height:12px;background:#333;border-radius:99px;overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#2ecc71,#f1c40f 60%,var(--red) 85%);transition:width .12s}
+  .bar.sm{height:6px;background:#ddd}
+  .bar.sm i{background:var(--red)}
+  .scale{display:flex;justify-content:space-between;font-size:10px;color:#888;margin-top:3px}
+  .g{color:#137333}.y{color:#b26a00}.r{color:var(--red)}
+  input{font:inherit;width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;margin-top:4px}
+  .raw{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:10px;font-family:monospace;font-size:11px}
+  .raw span{background:var(--bg);border-radius:6px;padding:4px;text-align:center}
+  .raw span small{display:block;color:var(--mut);font-size:9px}
+  .raw span.chg{background:#fde2e2}
+  pre{background:#111;color:#9f9;font-size:11px;padding:10px;border-radius:10px;max-height:220px;overflow:auto;white-space:pre-wrap;margin:0}
+  #gate{position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:20px}
+  #gate[hidden]{display:none}
+  #gate .card{width:100%;max-width:380px;margin:0}
+  #gMsg{min-height:18px;margin-top:8px}
+</style>
+</head>
+<body>
+<header><b>MSX125 <span>K-Line</span> Diag</b><span><span id="trial" class="pill"></span> <span id="st">ยังไม่เชื่อมต่อ</span></span></header>
+<main>
+  <div class="card">
+    <h3>การเชื่อมต่อ ECU (38770-K26-901)</h3>
+    <div class="mut">เปิดสวิตช์กุญแจ (ไม่ต้องสตาร์ท) แล้วเลือกช่องทาง<br>
+      • USB: สาย FTDI → OTG<br>
+      • Bluetooth: บอร์ด ESP32 "MSX-KLINE" (SPP ต้องจับคู่ในตั้งค่ามือถือก่อน)</div>
+    <button class="pri" data-tr="usb">USB (สาย FTDI)</button>
+    <div class="row">
+      <button data-tr="spp">Bluetooth SPP</button>
+      <button data-tr="ble">Bluetooth BLE</button>
+    </div>
+    <button id="bDisc" disabled>ตัดการเชื่อมต่อ</button>
+  </div>
+
+  <div class="card">
+    <h3>รหัสเสีย (DTC)</h3>
+    <div class="row">
+      <button id="bRead" disabled>อ่านรหัสเสีย</button>
+      <button id="bClear" disabled>ลบรหัสเสีย</button>
+    </div>
+    <div id="dtc" class="mut" style="margin-top:10px">—</div>
+  </div>
+
+  <div class="card">
+    <h3>ข้อมูลสด</h3>
+    <div class="row">
+      <button id="bLive" class="pri" disabled>เริ่มอ่าน</button>
+      <button id="bStop" disabled>หยุด</button>
+    </div>
+    <div class="rpm">
+      <small>รอบเครื่อง</small>
+      <div><b id="vRpm">—</b> <span class="mut">rpm</span></div>
+      <div class="bar"><i id="rpmBar"></i></div>
+      <div class="scale"><span>0</span><span>5k</span><span>8.5k</span><span>10k</span></div>
+    </div>
+    <div class="grid">
+      <div class="kv"><small>แบตเตอรี่</small><b id="vBat">—</b><em id="sBat"></em></div>
+      <div class="kv"><small>คันเร่ง TPS</small><b id="vTps">—</b><div class="bar sm"><i id="tpsBar"></i></div></div>
+      <div class="kv"><small>ความเร็ว</small><b id="vSpd">—</b></div>
+      <div class="kv"><small>O2 Sensor</small><b id="vO2">—</b><em id="sO2"></em></div>
+      <div class="kv"><small>อุณหภูมิเครื่อง (ECT)</small><b id="vEct">—</b></div>
+      <div class="kv"><small>อุณหภูมิอากาศ (IAT)</small><b id="vIat">—</b></div>
+      <div class="kv"><small>แรงดันท่อไอดี (MAP)</small><b id="vMap">—</b></div>
+      <div class="kv"><small>รอบต่อวินาที</small><b id="vHz">—</b></div>
+    </div>
+    <details style="margin-top:12px">
+      <summary class="mut">ตั้งค่าตำแหน่ง O2 / ดูค่าดิบ</summary>
+      <div class="mut" style="margin:8px 0">ยังไม่รู้แน่ว่า K26 เก็บค่า O2 ไว้ที่ไบต์ไหน ให้บิดเร่งแล้วปล่อยตอนเครื่องร้อน ไบต์ที่แกว่งราว 0.1–0.9V คือ O2 จากนั้นใส่ตำแหน่งที่นี่ หรือกด "สแกนตาราง" เพื่อหาในตารางอื่น</div>
+      <div class="row">
+        <label class="mut">ตาราง (hex)<input id="o2Tab" value="11"></label>
+        <label class="mut">ไบต์ที่<input id="o2Idx" type="number" value="10"></label>
+      </div>
+      <button id="bScan" disabled>สแกนตาราง (ดูผลใน Log)</button>
+      <div id="raw" class="raw"></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h3>Log</h3>
+    <pre id="log"></pre>
+  </div>
+</main>
+
+<div id="gate" hidden>
+  <div class="card">
+    <h3>หมดเวลาทดลองใช้ 15 นาที</h3>
+    <div class="mut">ใส่ชื่อผู้ใช้และรหัสผ่านเพื่อปลดล็อก</div>
+    <input id="gUser" placeholder="ชื่อผู้ใช้" autocomplete="username" autocapitalize="none">
+    <input id="gPass" type="password" placeholder="รหัสผ่าน" autocomplete="current-password">
+    <div id="gMsg" class="mut"></div>
+    <button class="pri" id="gGo">ปลดล็อก</button>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const hex = a => Array.from(a, b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const log = m => { const l=$('log'); l.textContent += m + '\n'; l.scrollTop = l.scrollHeight; };
+
+let T = null, rxBuf = [], liveOn = false, busy = false;
+
+/* ===== Trial gate =====
+   AUTH_URL    = เซิร์ฟเวอร์ตรวจรหัสผ่าน (แนะนำ) รับ POST JSON {username,password}
+                 ตอบ {"ok":true,"token":"..."} ถ้าถูกต้อง
+   LOCAL_USERS = ใช้ทดสอบเท่านั้น {"ชื่อ":"sha256ของรหัสผ่าน"} (ผู้ใช้เปิดดูโค้ดได้) */
+const TRIAL_SEC = 15 * 60;
+const AUTH_URL = '';
+const LOCAL_USERS = {};
+const GK = 'msxgate1';
+let gate = {used: 0, token: null};
+try { Object.assign(gate, JSON.parse(localStorage.getItem(GK) || '{}')); } catch (e) {}
+const saveGate = () => { try { localStorage.setItem(GK, JSON.stringify(gate)); } catch (e) {} };
+const gateOk = () => !!gate.token || gate.used < TRIAL_SEC;
+
+async function sha256(s) {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(h), b => b.toString(16).padStart(2,'0')).join('');
+}
+async function tryLogin(u, p) {
+  if (AUTH_URL) {
+    const r = await fetch(AUTH_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:u, password:p})});
+    const j = await r.json();
+    return j.ok ? (j.token || 'ok') : null;
+  }
+  const ok = Object.prototype.hasOwnProperty.call(LOCAL_USERS, u) && LOCAL_USERS[u] === await sha256(p);
+  return ok ? 'local' : null;
+}
+function paintGate() {
+  const el = $('trial');
+  if (gate.token) { el.textContent = 'ปลดล็อกแล้ว'; el.className = 'pill full'; return; }
+  const left = Math.max(0, TRIAL_SEC - gate.used);
+  el.textContent = 'ทดลอง ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+  el.className = 'pill';
+}
+function lockNow() { liveOn = false; $('gate').hidden = false; }
+$('gGo').onclick = async () => {
+  const u = $('gUser').value.trim(), p = $('gPass').value;
+  $('gMsg').textContent = 'กำลังตรวจสอบ...'; $('gMsg').className = 'mut';
+  try {
+    const t = await tryLogin(u, p);
+    if (t) { gate.token = t; saveGate(); $('gate').hidden = true; $('gPass').value = ''; paintGate(); }
+    else { $('gMsg').textContent = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'; $('gMsg').className = 'r'; }
+  } catch (e) { $('gMsg').textContent = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'; $('gMsg').className = 'r'; }
+};
+setInterval(() => {
+  if (!gate.token && document.visibilityState === 'visible') {
+    gate.used++;
+    if (gate.used % 5 === 0) saveGate();
+  }
+  paintGate();
+  if (!gateOk()) { saveGate(); lockNow(); }
+}, 1000);
+paintGate();
+if (!gateOk()) lockNow();
+
+async function readN(n, timeout = 400) {
+  const t0 = performance.now();
+  while (rxBuf.length < n) {
+    if (performance.now() - t0 > timeout) return null;
+    await sleep(3);
+  }
+  return rxBuf.splice(0, n);
+}
+
+/* ================= Transport 1: FTDI over WebUSB ================= */
+function ftdiTransport() {
+  let dev, reading = false;
+  const ctrl = async (request, value, index = 0) => {
+    const r = await dev.controlTransferOut({requestType:'vendor', recipient:'device', request, value, index});
+    if (r.status !== 'ok') throw new Error('ctrl fail ' + request);
+  };
+  const setBreak = on => ctrl(0x04, 0x0008 | (on ? 0x4000 : 0));
+  return {
+    name: 'USB',
+    async open() {
+      if (!navigator.usb) throw new Error('ไม่รองรับ WebUSB (ใช้ Chrome Android + https)');
+      dev = await navigator.usb.requestDevice({filters:[{vendorId:0x0403}]});
+      await dev.open();
+      if (dev.configuration === null) await dev.selectConfiguration(1);
+      await dev.claimInterface(0);
+      await ctrl(0x00, 0);
+      await ctrl(0x02, 0);
+      await ctrl(0x03, 0x4120, 0);
+      await setBreak(false);
+      await ctrl(0x09, 2);
+      await ctrl(0x00, 1); await ctrl(0x00, 2);
+      reading = true;
+      (async () => {
+        while (reading) {
+          try {
+            const r = await dev.transferIn(1, 64);
+            const d = new Uint8Array(r.data.buffer);
+            if (d.length > 2) rxBuf.push(...d.slice(2));
+          } catch (e) { if (reading) { log('USB หลุด: ' + e.message); onLost(); } reading = false; }
+        }
+      })();
+    },
+    async wakeup() {
+      await setBreak(true);  await sleep(70);
+      await setBreak(false); await sleep(130);
+    },
+    async transact(f) {
+      rxBuf = [];
+      await dev.transferOut(2, f);
+      if (!await readN(f.length)) return {err: 'ไม่มี echo'};
+      const head = await readN(2);
+      if (!head) return {err: 'ECU ไม่ตอบ'};
+      const rest = await readN(head[1] - 2);
+      if (!rest) return {err: 'คำตอบไม่ครบ'};
+      return {data: [...head, ...rest]};
+    },
+    async close() { reading = false; try { await dev.close(); } catch (e) {} }
+  };
+}
+
+/* ====== Transport 2/3: บอร์ด ESP32 (SPP หรือ BLE) — โปรโตคอล A5/5A ====== */
+const BRIDGE_ERR = ['', 'ไม่มี echo', 'ECU ไม่ตอบ', 'คำตอบไม่ครบ'];
+function bridgeOps(t) {
+  async function readPacket(timeout) {
+    const t0 = performance.now();
+    for (;;) {
+      const b = await readN(1, timeout - (performance.now() - t0));
+      if (!b) return null;
+      if (b[0] === 0x5A) break;
+    }
+    const h = await readN(2, 400); if (!h) return null;
+    const d = h[1] ? await readN(h[1], 400) : [];
+    if (d === null) return null;
+    return {st: h[0], data: d};
+  }
+  t.cmd = async (cmd, payload = [], timeout = 1200) => {
+    rxBuf = [];
+    await t.write(new Uint8Array([0xA5, cmd, payload.length, ...payload]));
+    return readPacket(timeout);
+  };
+  t.wakeup = async () => { const p = await t.cmd(0x01, [], 1500); if (!p) log('บอร์ดไม่ตอบ wakeup'); };
+  t.transact = async f => {
+    const p = await t.cmd(0x02, [...f]);
+    if (!p) return {err: 'บอร์ดไม่ตอบ (Bluetooth)'};
+    if (p.st) return {err: BRIDGE_ERR[p.st] || ('status ' + p.st)};
+    return {data: p.data};
+  };
+  return t;
+}
+
+const SPP_UUID = '00001101-0000-1000-8000-00805f9b34fb';
+function sppTransport() {
+  let port, writer, reader;
+  return bridgeOps({
+    name: 'SPP',
+    async open() {
+      if (!navigator.serial) throw new Error('ไม่รองรับ Web Serial (ใช้ Chrome Android รุ่นใหม่ + https)');
+      port = await navigator.serial.requestPort({
+        filters: [{bluetoothServiceClassId: SPP_UUID}],
+        allowedBluetoothServiceClassIds: [SPP_UUID]
+      });
+      await port.open({baudRate: 115200});
+      writer = port.writable.getWriter();
+      reader = port.readable.getReader();
+      (async () => {
+        try {
+          for (;;) {
+            const {value, done} = await reader.read();
+            if (done) break;
+            if (value) rxBuf.push(...value);
+          }
+        } catch (e) { log('SPP หลุด: ' + e.message); onLost(); }
+      })();
+    },
+    write: b => writer.write(b),
+    async close() {
+      try { await reader.cancel(); reader.releaseLock(); writer.releaseLock(); await port.close(); } catch (e) {}
+    }
+  });
+}
+
+const NUS = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+function bleTransport() {
+  let device, rxC;
+  return bridgeOps({
+    name: 'BLE',
+    async open() {
+      if (!navigator.bluetooth) throw new Error('ไม่รองรับ Web Bluetooth (Android: Chrome, iPhone: แอป Bluefy)');
+      device = await navigator.bluetooth.requestDevice({filters: [{namePrefix: 'MSX-KLINE'}], optionalServices: [NUS]});
+      device.addEventListener('gattserverdisconnected', () => { log('BLE หลุด'); onLost(); });
+      const srv = await device.gatt.connect();
+      const svc = await srv.getPrimaryService(NUS);
+      rxC = await svc.getCharacteristic(NUS_RX);
+      const txC = await svc.getCharacteristic(NUS_TX);
+      txC.addEventListener('characteristicvaluechanged', e => {
+        const v = e.target.value;
+        rxBuf.push(...new Uint8Array(v.buffer, v.byteOffset, v.byteLength));
+      });
+      await txC.startNotifications();
+    },
+    async write(b) {
+      for (let o = 0; o < b.length; o += 20) await rxC.writeValue(b.slice(o, o + 20));
+    },
+    async close() { try { device.gatt.disconnect(); } catch (e) {} }
+  });
+}
+
+/* ================= Honda K-line protocol ================= */
+const cks = a => ((a.reduce((s, b) => s + b, 0) & 0xFF) ^ 0xFF) + 1 & 0xFF;
+function frame(type, data) {
+  const m = [type, 2 + 1 + data.length, ...data];
+  m.push(cks(m)); return new Uint8Array(m);
+}
+
+async function send(type, data, tries = 2) {
+  if (!T || !gateOk()) return null;
+  for (let i = 0; i < tries; i++) {
+    const f = frame(type, data);
+    log('> ' + hex(f));
+    const r = await T.transact(f);
+    if (r.err) { log('  (' + r.err + ')'); continue; }
+    const all = r.data;
+    log('< ' + hex(all));
+    if (cks(all.slice(0, -1)) !== all[all.length - 1]) { log('  checksum ผิด'); continue; }
+    return all.slice(2, -1);
+  }
+  return null;
+}
+
+async function wakeupInit() {
+  await T.wakeup();
+  rxBuf = [];
+  const r = await send(0xFE, [0x72], 1);
+  const p = await send(0x72, [0x00, 0xF0]);
+  return !!(r || p);
+}
+
+/* ===== Actions ===== */
+async function guard(fn) {
+  if (busy || !gateOk()) return; busy = true;
+  try { await fn(); } catch (e) { log('ERR: ' + e.message); }
+  busy = false;
+}
+
+const ACT = ['bRead','bClear','bLive','bScan'];
+function setState(txt, ok) {
+  $('st').textContent = txt; $('st').className = ok ? 'ok' : '';
+  ACT.forEach(b => $(b).disabled = !ok);
+  $('bDisc').disabled = !T;
+}
+function onLost() { liveOn = false; T = null; setState('หลุดการเชื่อมต่อ', false); }
+
+const MAKERS = {usb: ftdiTransport, spp: sppTransport, ble: bleTransport};
+document.querySelectorAll('[data-tr]').forEach(btn => btn.onclick = () => guard(async () => {
+  if (T) await T.close();
+  T = MAKERS[btn.dataset.tr]();
+  log('เปิด ' + T.name + '...');
+  try { await T.open(); } catch (e) { T = null; setState('ยังไม่เชื่อมต่อ', false); throw e; }
+  if (T.cmd) { const v = await T.cmd(0x03, [], 1500); log('บอร์ด: ' + (v ? 'fw ' + String.fromCharCode(...v.data) : 'ไม่ตอบ')); }
+  log('Wakeup + init...');
+  const ok = await wakeupInit();
+  setState(ok ? 'เชื่อมต่อแล้ว (' + T.name + ')' : T.name + ': ECU ไม่ตอบ', ok);
+}));
+
+$('bDisc').onclick = async () => { liveOn = false; if (T) await T.close(); T = null; setState('ยังไม่เชื่อมต่อ', false); };
+
+[['usb','usb'],['spp','serial'],['ble','bluetooth']].forEach(([k, api]) => {
+  if (!navigator[api]) { const b = document.querySelector(`[data-tr="${k}"]`); b.disabled = true; b.title = 'เบราว์เซอร์นี้ไม่รองรับ'; }
+});
+
+async function readFaults(table) {
+  const out = [];
+  for (let i = 1; i < 0x0C; i++) {
+    const d = await send(0x72, [table, i]);
+    if (!d) break;
+    for (const j of [3, 5, 7]) if (d[j]) out.push(String(d[j]).padStart(2,'0') + '-' + String(d[j+1]).padStart(2,'0'));
+    if (d[2] === 0) break;
+  }
+  return out;
+}
+
+$('bRead').onclick = () => guard(async () => {
+  const cur = await readFaults(0x74), past = await readFaults(0x73);
+  const li = a => a.length ? '<ul>' + a.map(c => `<li>${c}</li>`).join('') + '</ul>' : ' ไม่มี';
+  $('dtc').innerHTML = `<b>ปัจจุบัน:</b>${li(cur)}<br><b>ในอดีต:</b>${li(past)}`;
+});
+
+$('bClear').onclick = () => guard(async () => {
+  if (!confirm('ลบรหัสเสียทั้งหมด?')) return;
+  const r = await send(0x72, [0x60, 0x03]);
+  $('dtc').textContent = r ? 'ลบแล้ว — กดอ่านซ้ำเพื่อตรวจ' : 'ECU ไม่ตอบรับคำสั่งลบ';
+});
+
+try {
+  const s = JSON.parse(localStorage.getItem('o2cfg') || 'null');
+  if (s) { $('o2Tab').value = s.t; $('o2Idx').value = s.i; }
+} catch (e) {}
+function o2cfg() {
+  const t = parseInt($('o2Tab').value, 16) || 0x11, i = parseInt($('o2Idx').value) || 0;
+  try { localStorage.setItem('o2cfg', JSON.stringify({t: t.toString(16), i})); } catch (e) {}
+  return {t, i};
+}
+
+const set = (id, v) => $(id).textContent = v;
+const cls = (id, txt, c) => { $(id).textContent = txt; $(id).className = c; };
+let prevRaw = [], frames = 0, t0 = performance.now();
+
+function showLive(d, o2data) {
+  const b = d.slice(2);
+  const rpm = b[0] << 8 | b[1];
+  set('vRpm', rpm.toLocaleString());
+  $('rpmBar').style.width = Math.min(rpm / 10000 * 100, 100) + '%';
+
+  const tps = b[3];
+  set('vTps', tps + ' %');
+  $('tpsBar').style.width = Math.min(tps, 100) + '%';
+
+  const bat = b[12] / 10;
+  set('vBat', bat.toFixed(1) + ' V');
+  if (bat < 12.0) cls('sBat', 'ต่ำ / ควรชาร์จ', 'r');
+  else if (bat < 12.5) cls('sBat', 'ปานกลาง', 'y');
+  else if (bat <= 14.8) cls('sBat', rpm > 1500 ? 'ชาร์จปกติ' : 'ปกติ', 'g');
+  else cls('sBat', 'สูงเกิน / เช็กเรกูเลเตอร์', 'r');
+
+  set('vSpd', b[13] + ' km/h');
+  set('vEct', (b[5] - 40) + ' °C');
+  set('vIat', (b[7] - 40) + ' °C');
+  set('vMap', b[9] + ' kPa');
+
+  const {i} = o2cfg();
+  const src = o2data || b;
+  if (src[i] !== undefined) {
+    const v = src[i] * 5 / 256;
+    set('vO2', v.toFixed(2) + ' V');
+    if (v < 0.35) cls('sO2', 'บาง (Lean)', 'y');
+    else if (v > 0.6) cls('sO2', 'หนา (Rich)', 'r');
+    else cls('sO2', 'สมดุล', 'g');
+  } else { set('vO2', '—'); cls('sO2', 'ไม่มีไบต์นี้', 'mut'); }
+
+  $('raw').innerHTML = b.map((x, k) =>
+    `<span class="${prevRaw.length && prevRaw[k] !== x ? 'chg' : ''}"><small>${k}</small>${x.toString(16).padStart(2,'0').toUpperCase()}</span>`).join('');
+  prevRaw = b;
+
+  frames++;
+  const dt = (performance.now() - t0) / 1000;
+  if (dt > 2) { set('vHz', (frames / dt).toFixed(1) + ' Hz'); frames = 0; t0 = performance.now(); }
+}
+
+$('bLive').onclick = async () => {
+  liveOn = true; $('bLive').disabled = true; $('bStop').disabled = false;
+  while (liveOn) {
+    await guard(async () => {
+      const d = await send(0x72, [0x71, 0x11], 1);
+      if (!d) return;
+      const {t} = o2cfg();
+      let o2 = null;
+      if (t !== 0x11) { const x = await send(0x72, [0x71, t], 1); if (x) o2 = x.slice(2); }
+      showLive(d, o2);
+    });
+    await sleep(60);
+  }
+};
+
+$('bScan').onclick = () => guard(async () => {
+  log('--- สแกนตาราง ---');
+  for (const t of [0x10,0x11,0x12,0x13,0x17,0x20,0x21,0x60,0x61,0x70,0xD0,0xD1]) {
+    const d = await send(0x72, [0x71, t], 1);
+    log(`ตาราง ${t.toString(16).toUpperCase()}: ` + (d ? hex(d.slice(2)) : 'ไม่ตอบ'));
+  }
+});
+$('bStop').onclick = () => { liveOn = false; $('bLive').disabled = false; $('bStop').disabled = true; };
+</script>
+</body>
+</html>
